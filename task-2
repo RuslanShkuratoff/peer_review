@@ -1,0 +1,134 @@
+#include <algorithm>
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <string_view>
+#include <vector>
+#include <utility>
+#include <execution>
+
+using namespace std;
+
+class Domain {
+public:
+    // разработайте класс домена
+    Domain() = default;
+    Domain(string&& str)
+        :domain_str_(move(str)){
+    }
+    Domain(const string& str)
+        :domain_str_(str){
+    }
+    // возвращаю строковое представление string
+    const string& GetStr()const{
+        return domain_str_;
+    }
+    // возвращаю строковое представление string_view
+    string_view GetStrV() const{
+        return string_view(domain_str_);
+    }
+    bool operator==(const Domain& other)const{
+        if (domain_str_.size() != other.GetStr().size()) return false;
+        return equal(execution::par,domain_str_.begin(), domain_str_.end(), other.GetStrV().begin());
+    }
+    // метод IsSubdomain, принимающий другой домен и возвращающий true, если this его поддомен
+    bool IsSubdomain(const Domain& other)const{
+        if (other.GetStr().size() > domain_str_.size())
+            return false;
+        return equal(execution::par,other.GetStrV().begin(),other.GetStrV().end(),domain_str_.begin());
+    }
+
+private:
+    string domain_str_ = "";
+};
+
+class DomainChecker {
+public:
+    // конструктор принимает список запрещённых доменов через пару итераторов
+    template<typename Iter>
+    DomainChecker(Iter ItFirst, Iter ItLast)
+        {
+        // заполняем контейнер запрещённых сайтов
+        for (auto It = ItFirst; It!=ItLast; ++It){
+            forbidden_domains_.push_back(&(*It));
+        }
+        // сортируем его
+        sort(execution::par, forbidden_domains_.begin(), forbidden_domains_.end(), [](const auto& left, const auto& right){return (*left).GetStr() < (*right).GetStr();});
+
+        // удаляем вложенные домены запрещённых сайтов
+        if (forbidden_domains_.size() > 1 ){
+            auto prev_it = forbidden_domains_.begin();
+            auto it = next(forbidden_domains_.begin());
+            while (it != forbidden_domains_.end()){
+                if ((*it)->IsSubdomain(*(*prev_it))){
+                    it = forbidden_domains_.erase(it);
+                } else {
+                    prev_it = it++;
+                }
+            }
+        }
+    }
+
+    // метод IsForbidden, возвращает true, если домен запрещён
+    bool IsForbidden(const Domain& other){
+        // если список запрещённых сайтов пуст
+        if (forbidden_domains_.empty()) return false;
+        // если список содержит 1 запрещённый сайт
+        if (forbidden_domains_.size() == 1) return (other.IsSubdomain(*(forbidden_domains_.front())));
+        // производим бинарный поиск в списке
+        // в случае попадания в список запрещённых доменов
+        // итератор может вернуться на ячеёку равную имени сайта или на следующую
+        auto it = lower_bound(forbidden_domains_.begin(), forbidden_domains_.end(), other, [](const Domain* forb, const Domain& other){return forb->GetStrV() < other.GetStrV();});
+        // если итератор попал на первую ячейку
+        // сайт или равен 1 ячейке или не запрещён
+        if (it == forbidden_domains_.begin()) {
+            return (*forbidden_domains_.front() == other);
+        }
+        // если итератор не на последней ячейке
+        // проверяем равен ли сайт текущей ячейке
+        if (it != forbidden_domains_.end()){
+            if (**it == other) return true;
+        }
+        // проверяем является ли он частью домена из предыдущей ячейки
+        return (other.IsSubdomain(**prev(it)));
+    }
+
+private:
+    // вектор указателей на запрещённые домены, которые изначально хранятся в forbidden_domains
+    // если forbidden_domains после конструктора данного класса будет удалён функционал не останется работоспособным
+    vector<const Domain*> forbidden_domains_;
+};
+
+// разработайте функцию ReadDomains, читающую заданное количество доменов из стандартного входа
+std::vector<Domain> ReadDomains(istream& input, size_t count_forbidden_domains){
+    std::vector<Domain> result;
+    for (size_t i = 0; i < count_forbidden_domains; ++i){
+        string line;
+        getline(input, line);
+        if (line == "")
+            continue;
+        result.emplace_back(string(line.rbegin(), line.rend()) + '.');
+    }
+    return result;
+}
+
+template <typename Number>
+Number ReadNumberOnLine(istream& input) {
+    string line;
+    getline(input, line);
+
+    Number num;
+    std::istringstream(line) >> num;
+
+    return num;
+}
+
+int main() {
+    const std::vector<Domain> forbidden_domains = ReadDomains(cin, ReadNumberOnLine<size_t>(cin));
+    DomainChecker checker(forbidden_domains.begin(), forbidden_domains.end());
+
+    const std::vector<Domain> test_domains = ReadDomains(cin, ReadNumberOnLine<size_t>(cin));
+    for (const Domain& domain : test_domains) {
+        cout << (checker.IsForbidden(domain) ? "Bad"sv : "Good"sv) << endl;
+    }
+}
